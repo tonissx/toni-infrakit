@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Toni Infra Kit: cubo isométrico em três lâminas (rack), com os LEDs no verde do Toni Devkit. -->
+  <defs>
+    <linearGradient id="ikTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#C9F3FF"/>
+      <stop offset="55%" stop-color="#6FD3F7"/>
+      <stop offset="100%" stop-color="#3BAFE0"/>
+    </linearGradient>
+    <linearGradient id="ikLeft" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2A8FD0"/>
+      <stop offset="100%" stop-color="#155C92"/>
+    </linearGradient>
+    <linearGradient id="ikRight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#14527F"/>
+      <stop offset="100%" stop-color="#0A2F4D"/>
+    </linearGradient>
+  </defs>
+  <g stroke-linejoin="round" stroke-width="1.2">
+    <path d="M16 3 L28 9.5 L16 16 L4 9.5 Z" fill="url(#ikTop)" stroke="#C9F3FF"/>
+    <path d="M4 9.5 L16 16 L16 29 L4 22.5 Z" fill="url(#ikLeft)" stroke="#2A8FD0"/>
+    <path d="M16 16 L28 9.5 L28 22.5 L16 29 Z" fill="url(#ikRight)" stroke="#14527F"/>
+  </g>
+  <!-- Lâminas -->
+  <g fill="none" stroke="#06213A" stroke-opacity=".75" stroke-width=".7" stroke-linecap="round">
+    <path d="M4.4 14.1 L16 20.4 L27.6 14.1"/>
+    <path d="M4.4 18.4 L16 24.7 L27.6 18.4"/>
+  </g>
+  <!-- LEDs -->
+  <g fill="#5BF59A">
+    <circle cx="24.6" cy="13.3" r=".95"/>
+    <circle cx="24.6" cy="17.6" r=".95"/>
+    <circle cx="24.6" cy="21.9" r=".95" fill-opacity=".45"/>
+  </g>
+  <!-- Brilho na aresta de cima -->
+  <path d="M5.2 9.5 L16 3.6 L26.8 9.5" fill="none" stroke="#FFFFFF" stroke-opacity=".55" stroke-width=".5" stroke-linecap="round"/>
+</svg>

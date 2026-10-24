@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - id: compute
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/compute-version.mjs >> "$GITHUB_OUTPUT"
+      # Cria a release (e a tag) uma única vez, antes do build. Sem isso, os dois alvos do Windows (nsis e portable)
+      # disputam a criação e o perdedor leva 422 already_exists, deixando a release sem latest.yml (o que o
+      # auto-update lê). O build só anexa arquivos a uma release que já existe.
+      - name: Cria a release se ainda não existir
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ steps.compute.outputs.version }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "A release $TAG já existe."
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          fi
+
+  # Só Windows: as ferramentas usam o spooler, o PowerShell e o pnputil do Windows.
+  build:
+    needs: version
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx electron-builder --win --x64 --publish always --config.extraMetadata.version=${{ needs.version.outputs.version }}
+
+  # Checksums + atestado de procedência (SLSA) dos instaladores, para quem quiser verificar o download.
+  # Verificação: `gh attestation verify <arquivo> -R tonissx/toni-infrakit` e `SHA256SUMS.txt` na página da release.
+  verify-assets:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: v${{ needs.version.outputs.version }}
+    steps:
+      - name: Baixa os instaladores da release
+        run: |
+          mkdir assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir assets --pattern '*.exe'
+          ls -l assets
+      - name: Gera o SHA256SUMS.txt
+        working-directory: assets
+        run: sha256sum * > ../SHA256SUMS.txt && cat ../SHA256SUMS.txt
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: assets/*
+      - name: Anexa o SHA256SUMS.txt à release
+        run: gh release upload "$TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
