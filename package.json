@@ -1,8 +1,8 @@
 {
   "name": "toni-infrakit",
-  "productName": "Toni Infra Kit",
+  "productName": "Toni Infrakit",
   "version": "0.1.0",
-  "description": "Toni Infra Kit — ferramentas para a equipe de infraestrutura: encontrar, instalar e testar impressoras (rede, USB, WSD).",
+  "description": "Toni Infrakit — ferramentas para a equipe de infraestrutura: encontrar, instalar e testar impressoras (rede, USB, WSD).",
   "author": "Antonio Gonçalves",
   "license": "MIT",
   "private": true,
@@ -12,6 +12,7 @@
     "watch": "node scripts/build-renderer.mjs --watch",
     "start": "npm run build && electron .",
     "dev": "npm run build && electron . --dev",
+    "demo": "npm run build && electron . --demo",
     "icon": "electron scripts/render-icon.cjs",
     "test": "node --test scripts/test-printers-model.mjs scripts/test-printers-inf.mjs scripts/test-printers-ipp.mjs scripts/test-printers-snmp.mjs scripts/test-printers-mdns.mjs scripts/test-printers-ranges.mjs scripts/test-printers-merge.mjs scripts/test-printers-drivers.mjs scripts/test-printers-ps.mjs scripts/test-printers-service.mjs scripts/test-compute-version.mjs scripts/test-updater.mjs",
     "version:compute": "node scripts/compute-version.mjs",
@@ -30,7 +31,7 @@
   },
   "build": {
     "appId": "io.github.tonissx.toniinfrakit",
-    "productName": "Toni Infra Kit",
+    "productName": "Toni Infrakit",
     "publish": {
       "provider": "github",
       "owner": "tonissx",

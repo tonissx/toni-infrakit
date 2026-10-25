@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="renderer/assets/icon.png" alt="Toni Infra Kit" width="96" />
+<img src="renderer/assets/icon.png" alt="Toni Infrakit" width="96" />
 
-# Toni Infra Kit
+# Toni Infrakit
 
 **Ferramentas de desktop para a equipe de infraestrutura. Começa pelas impressoras: encontrar, escolher o driver,
 instalar e testar, numa tela só.**

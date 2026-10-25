@@ -1,4 +1,4 @@
-// Registro de ferramentas do Toni Infra Kit.
+// Registro de ferramentas do Toni Infrakit.
 // Para adicionar uma ferramenta: crie src/tools/<id>/<Nome>.jsx, descreva-a em src/tools/meta.js
 // e associe o componente em COMPONENTS. Ela aparece na sidebar e no Início.
 import { TOOL_META } from './meta.js';

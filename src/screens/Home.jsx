@@ -15,7 +15,7 @@ export function Home({ go }) {
 
   return (
     <div>
-      <PageHeader icon="layout-grid" title="Início" subtitle={s && s.local ? 'Computador ' + s.local.computer : 'Toni Infra Kit'}
+      <PageHeader icon="layout-grid" title="Início" subtitle={s && s.local ? 'Computador ' + s.local.computer : 'Toni Infrakit'}
         actions={<Button variant="primary" icon="radar" onClick={() => go('printers')}>Procurar impressoras</Button>} />
       <div className="home">
         <div className="home-kpis">

@@ -3,7 +3,7 @@
  * Impressoras (processo principal): inventário local, varredura de rede, escolha de driver, instalação, página de
  * teste e histórico. As dependências de sistema (PowerShell, rede, repositório) são injetadas — os testes usam falsos.
  *
- * Arquivos em %APPDATA%/Toni Infra Kit:
+ * Arquivos em %APPDATA%/Toni Infrakit:
  *  - printers.json: { v: 1, settings, network, mdns, lastScan, log }
  *  - printers-repo.json: índice do repositório de drivers (pode ser grande, por isso separado)
  */

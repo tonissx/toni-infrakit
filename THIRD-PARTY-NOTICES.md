@@ -1,6 +1,6 @@
 # Avisos de terceiros
 
-O Toni Infra Kit é distribuído sob a licença MIT (ver `LICENSE`). Ele inclui ou carrega os componentes abaixo, cada um
+O Toni Infrakit é distribuído sob a licença MIT (ver `LICENSE`). Ele inclui ou carrega os componentes abaixo, cada um
 com a sua própria licença. Os textos completos estão na pasta [`licenses/`](licenses), que também acompanha o app
 instalado, ao lado do `LICENSE`.
 

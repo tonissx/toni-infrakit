@@ -62,7 +62,7 @@ function App() {
   }, []);
   React.useEffect(() => {
     if (updater && updater.status === 'downloaded' && prevUpdaterStatus.current !== 'downloaded') {
-      toast('Atualização pronta', `Reinicie o Infra Kit para aplicar a versão ${updater.latestVersion || ''}`);
+      toast('Atualização pronta', `Reinicie o Infrakit para aplicar a versão ${updater.latestVersion || ''}`);
     }
     prevUpdaterStatus.current = updater && updater.status;
   }, [updater]);
@@ -84,7 +84,7 @@ function App() {
     : route === 'settings' ? <Settings prefs={prefs} setPrefs={setPrefs} info={info} updater={updater} />
     : <Screen toast={toast} />;
 
-  const title = (tool ? tool.name : route === 'settings' ? 'Configurações' : 'Início') + ' — Infra Kit';
+  const title = (tool ? tool.name : route === 'settings' ? 'Configurações' : 'Início') + ' — Infrakit' + (info && info.demo ? ' (demonstração: nada é instalado de verdade)' : '');
 
   return (
     <div className="tk-root" style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--tk-bg)', position: 'relative', overflow: 'hidden' }}>

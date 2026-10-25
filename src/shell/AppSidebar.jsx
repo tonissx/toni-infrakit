@@ -13,7 +13,7 @@ export function AppSidebar({ route, go, collapsed, onCollapse }) {
 
   const mark = (props) => (
     <span className="app-brand__mark" tabIndex={0} {...props}>
-      <img src="assets/symbol.svg" alt="Toni Infra Kit" />
+      <img src="assets/symbol.svg" alt="Toni Infrakit" />
     </span>
   );
 
@@ -22,7 +22,7 @@ export function AppSidebar({ route, go, collapsed, onCollapse }) {
     : <>
         <span className="app-brand">
           {mark({ style: { height: 22, width: 22 } })}
-          <span className="app-brand__name"><b>Infra</b> Kit</span>
+          <span className="app-brand__name"><b>Infrakit</b></span>
         </span>
         <IconButton icon="panel-left-close" label={'Recolher (' + mod('\\') + ')'} size="sm" onClick={onCollapse} style={{ marginLeft: 'auto' }} />
       </>;

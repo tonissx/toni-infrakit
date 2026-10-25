@@ -9,6 +9,9 @@ const repo = require('./printers/repo');
 
 const isDev = process.argv.includes('--dev');
 const isMac = process.platform === 'darwin';
+// Modo demonstração (npm run demo): parque de impressoras fictício, nada toca no Windows. Dados em pasta própria.
+const isDemo = process.argv.includes('--demo');
+if (isDemo) app.setPath('userData', path.join(app.getPath('appData'), 'Toni Infrakit (demo)'));
 
 /* ─────────────── Janela principal ─────────────── */
 let mainWin = null;
@@ -21,7 +24,7 @@ function createMainWindow() {
     minHeight: 640,
     show: false,
     backgroundColor: '#050506',
-    title: 'Toni Infra Kit',
+    title: 'Toni Infrakit',
     icon: path.join(__dirname, '..', 'renderer', 'assets', 'icon.png'),
     frame: isMac, // Windows/Linux: title bar própria do design system (tk-titlebar)
     titleBarStyle: isMac ? 'hiddenInset' : undefined,
@@ -66,6 +69,7 @@ const broadcast = (channel, payload) => { for (const w of BrowserWindow.getAllWi
 const fromEvent = (e) => BrowserWindow.fromWebContents(e.sender);
 
 ipcMain.handle('app:info', () => ({
+  demo: isDemo,
   version: app.getVersion(),
   platform: process.platform,
   electron: process.versions.electron,
@@ -97,17 +101,24 @@ ipcMain.handle('shell:open-url', (_e, url) => {
 let printers = null;
 
 function initPrinters() {
+  const sys = isDemo ? require('./printers/demo').createDemo() : { run: powershell.run, runElevated: powershell.runElevated, net, repo };
   printers = createPrintersService({
     file: path.join(app.getPath('userData'), 'printers.json'),
     repoFile: path.join(app.getPath('userData'), 'printers-repo.json'),
-    run: powershell.run,
-    runElevated: powershell.runElevated,
-    net,
-    repo,
+    platform: isDemo ? 'win32' : process.platform,
+    ...sys,
     broadcast: (s) => broadcast('printers:changed', s),
   });
   // Inventário local já na abertura: a lista aparece com as filas instaladas antes da primeira varredura.
   printers.refreshLocal().catch((e) => console.error('[printers]', e));
+  if (isDemo) {
+    printers.get().then((s) => {
+      if (!s.settings.repoDirs.length) return printers.setSettings({ repoDirs: ['\\\\fs01\\drivers'] });
+      if (!s.repo.at) return printers.reindex();
+      return null;
+    }).then(() => printers.get()).then((s) => { if (!s.lastScan) return printers.scan({ ranges: '' }); return null; })
+      .catch((e) => console.error('[demo]', e));
+  }
 }
 
 ipcMain.handle('printers:get', () => printers.get());

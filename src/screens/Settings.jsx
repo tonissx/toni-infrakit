@@ -116,7 +116,7 @@ export function Settings({ prefs, setPrefs, info, updater }) {
         </Card>
         <Card padding={24}>
           <div className="tk-card__title">Sobre</div>
-          <Row label="Toni Infra Kit" hint="Ferramentas para a equipe de infraestrutura"><Badge size="sm" mono>v{info?.version || '—'}</Badge></Row>
+          <Row label="Toni Infrakit" hint="Ferramentas para a equipe de infraestrutura"><Badge size="sm" mono>v{info?.version || '—'}</Badge></Row>
           <Row label="Desenvolvido por"><Badge size="sm">Antônio Gonçalves</Badge></Row>
           <Row label="Repositório">
             <a className="set-link" href="https://github.com/tonissx/toni-infrakit" target="_blank" rel="noreferrer">github.com/tonissx/toni-infrakit</a>
