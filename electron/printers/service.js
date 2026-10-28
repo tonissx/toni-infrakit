@@ -29,6 +29,7 @@ function friendlyRemoteError(msg) {
   const m = String(msg || '');
   if (/access is denied|acesso negado/i.test(m)) return 'Acesso negado: seu usuário não é administrador nesse computador';
   if (/no such host|could not be resolved|cannot be resolved|não foi possível resolver|nome.*não.*encontrad/i.test(m)) return 'Nome não encontrado na rede';
+  if (/rpc server is unavailable|servidor rpc.*(indispon|não est)|0x800706ba/i.test(m)) return 'Não consegui ativar o WinRM: o WMI (RPC) está bloqueado no firewall ou o computador está desligado';
   if (/winrm|ws-management|wsman|cannot connect|não pode se conectar|não foi possível conectar/i.test(m)) return 'Sem resposta do WinRM (computador desligado, firewall ou WinRM desativado)';
   return m.split(/\r?\n/)[0].trim().slice(0, 240) || 'Falhou sem mensagem';
 }
@@ -343,6 +344,39 @@ function createPrintersService({
     }
   }
 
+  /**
+   * Página de teste na fila recém-instalada, nos computadores onde deu certo (ou só em req.computers), até REMOTE_PARALLEL por vez.
+   * O resultado fica em remote.items[].test (state: running | ok | fail) e no Histórico.
+   */
+  async function remoteTest(req = {}) {
+    await load();
+    ensureSupported();
+    const run_ = remoteRun;
+    if (!run_ || !run_.done) throw new Error('Espere a instalação em vários computadores terminar');
+    const only = Array.isArray(req.computers) ? req.computers.map((x) => String(x).toLowerCase()) : null;
+    const todo = run_.items.filter((i) => i.ok && (!only || only.includes(i.computer.toLowerCase())) && !(i.test && i.test.state === 'running'));
+    for (const i of todo) i.test = { state: 'running', detail: 'Enviando a página de teste…' };
+    changed();
+    let next = 0;
+    const worker = async () => {
+      while (next < todo.length) {
+        const item = todo[next++];
+        let r;
+        try { r = await run(ps.remoteTestScript(item.computer, run_.queue), { timeout: 90_000 }); }
+        catch (e) { r = { ok: false, error: e.message }; }
+        const detail = r.error ? friendlyRemoteError(r.error)
+          : r.ok ? `Página enviada e saiu da fila em ${r.seconds}s`
+          : r.sent && !r.cleared ? `Página enviada, mas continua na fila após ${r.seconds}s (${(arr(r.jobs)[0] && r.jobs[0].status) || 'aguardando'})`
+          : 'A página não foi enviada';
+        item.test = { state: r.ok ? 'ok' : 'fail', detail };
+        addLog({ action: 'remote-test', target: `${run_.queue} em ${item.computer}`, ok: !!r.ok, detail, result: r });
+        changed();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(REMOTE_PARALLEL, todo.length) }, worker));
+    return { ok: todo.every((i) => i.test.state === 'ok'), items: todo.map((i) => ({ computer: i.computer, ...i.test })) };
+  }
+
   function cancelRemote() { if (remoteRun && !remoteRun.done) remoteRun.cancel = true; }
   function clearRemote() { if (remoteRun && remoteRun.done) { remoteRun = null; changed(); } }
 
@@ -514,7 +548,7 @@ function createPrintersService({
   return {
     get, refreshLocal, scan, cancelScan, driverOptions, install, testPage, remove, setDefault, openQueue,
     setSettings, reindex, getLog, clearLog,
-    listComputers, preflight, remoteInstall, cancelRemote, clearRemote,
+    listComputers, preflight, remoteInstall, remoteTest, cancelRemote, clearRemote,
     driverNames, listProfiles, saveProfile, deleteProfile, exportProfiles, importProfiles, capabilities, applyProfile,
     flush: () => queue.flush(),
   };

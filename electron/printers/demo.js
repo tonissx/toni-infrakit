@@ -105,6 +105,12 @@ function createDemo() {
         ? { computer: n, ok: false, error: 'WinRM cannot complete the operation. Verify that the specified computer name is valid' }
         : { computer: n, ok: true, error: null, x64: true, os: 'Microsoft Windows 11 Pro', spooler: 'Running', queueExists: /FIN-PC03/i.test(n), driverInstalled: false }));
     }
+    if (script.includes('# IK-RTEST')) {
+      await sleep(1500 + Math.random() * 1500);
+      const computer = /-ComputerName '((?:[^']|'')*)'/.exec(script)[1];
+      if (/SUP-PC01/i.test(computer)) return { ok: false, sent: true, cleared: false, jobs: [{ status: 'Error, PaperOut', pages: 0, total: 1 }], printerStatus: 'PaperOut', seconds: 20 };
+      return { ok: true, sent: true, cleared: true, jobs: [], printerStatus: 'Normal', seconds: 2.4 };
+    }
     if (script.includes('# IK-REMOTE')) {
       const computer = /\$computer = '((?:[^']|'')*)'/.exec(script)[1].replace(/''/g, "'");
       await sleep(1500 + Math.random() * 2500);
@@ -115,6 +121,7 @@ function createDemo() {
       }
       // O script de instalação vai dentro de uma string: as aspas dele aparecem dobradas.
       const driver = (/Add-PrinterDriver -Name ''([^']*)''/.exec(script) || [])[1] || 'Microsoft IPP Class Driver';
+      if (/RH-PC01/i.test(computer)) steps.unshift({ label: 'Ativar o WinRM (estava desligado)', ok: true, detail: 'WinRM ativado' });
       if (script.includes('Copiar o driver')) steps.push({ label: 'Copiar o driver para o computador', ok: true, detail: 'C:\\ProgramData\\Toni Infrakit\\drivers\\demo' });
       if (script.includes('Add-PrinterDriver')) steps.push({ label: 'Registrar o driver de impressora', ok: true, detail: driver });
       steps.push({ label: 'Criar a porta TCP/IP', ok: true, detail: 'Porta criada' }, { label: 'Criar a fila de impressão', ok: true, detail: 'ok' });
