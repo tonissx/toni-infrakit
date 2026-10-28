@@ -59,3 +59,33 @@ test('teste, remoção, padrão e inventário', () => {
   const inv = inventoryScript();
   for (const cmd of ['Get-Printer', 'Get-PrinterPort', 'Get-PrinterDriver', 'Win32_PnPEntity']) assert.ok(inv.includes(cmd), cmd);
 });
+
+test('preferências: um passo por item, valores escapados, enum inválido descartado', async () => {
+  const { applyPrefsScript, installScript: inst } = require('../src/printers/ps.js');
+  const s = applyPrefsScript("Fila d'Água", { paperSize: 'ISOA4', inputBin: 'Cassette; calc', orientation: 'Landscape', duplex: 'TwoSidedLongEdge', color: true });
+  assert.match(s, /Set-PrintConfiguration -PrinterName 'Fila d''Água' -DuplexingMode 'TwoSidedLongEdge'/);
+  assert.match(s, /-Color \$true/);
+  assert.match(s, /PageMediaSizeName\]::ISOA4/);
+  assert.match(s, /PageOrientation\]::Landscape/);
+  assert.doesNotMatch(s, /calc/); // nome de enum com ; nunca entra no script
+  assert.match(s, /SoftStep 'Preferência: tamanho do papel'/);
+  assert.doesNotMatch(inst({ queue: 'X', method: 'ipp', ip: '1.1.1.1' }), /SoftStep/); // sem perfil, nada muda
+});
+
+test('instalação remota: copia o driver, roda o script dentro da sessão e limpa no fim', async () => {
+  const { remoteInstallScript, preflightScript } = require('../src/printers/ps.js');
+  const plan = { queue: "Fila d'Água", method: 'driver', driver: 'D', source: 'repo', inf: 'C:\\ProgramData\\Toni Infrakit\\drivers\\h\\a.inf',
+    connection: 'tcp', ip: '10.0.0.5', port: 'raw', prefs: { duplex: 'OneSided' } };
+  const s = remoteInstallScript('PC-01', plan, { srcDir: 'C:\\Temp\\h', dir: 'C:\\ProgramData\\Toni Infrakit\\drivers\\h' });
+  assert.match(s, /^# IK-REMOTE$/m);
+  assert.match(s, /New-PSSession -ComputerName \$computer/);
+  assert.match(s, /Copy-Item -Path \(Join-Path 'C:\\Temp\\h' '\*'\) -Destination 'C:\\ProgramData\\Toni Infrakit\\drivers\\h' -ToSession \$s/);
+  assert.match(s, /Remove-Item -Recurse -Force/);
+  assert.match(s, /Fila d''''Água/); // aspas dobradas duas vezes: valor dentro do script que vai dentro de uma string
+  const inner = s.slice(s.indexOf('[scriptblock]::Create('));
+  assert.doesNotMatch(inner, /OutputEncoding/); // não existe console numa sessão remota
+  assert.ok(s.includes("-match '^\\s*\\{'")); // a regex que acha o JSON de volta sobrevive ao template
+  const noCopy = remoteInstallScript('PC-01', { ...plan, source: 'installed', inf: null }, {});
+  assert.doesNotMatch(noCopy, /Copy-Item/);
+  assert.match(preflightScript(["A'B", 'C'], { queue: 'Q' }), /@\('A''B', 'C'\)/);
+});

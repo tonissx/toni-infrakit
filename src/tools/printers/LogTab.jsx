@@ -9,6 +9,8 @@ const ACTION = {
   test: { icon: 'file-check', label: 'Página de teste' },
   remove: { icon: 'trash-2', label: 'Remoção' },
   default: { icon: 'star', label: 'Padrão' },
+  profile: { icon: 'sliders-horizontal', label: 'Perfil' },
+  'remote-install': { icon: 'monitor-up', label: 'Instalação remota' },
 };
 
 /** Histórico do que foi feito neste computador (útil para chamado/ticket). */

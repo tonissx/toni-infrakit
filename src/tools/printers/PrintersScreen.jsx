@@ -6,6 +6,8 @@ import { DeviceDetail } from './DeviceDetail.jsx';
 import { InstallModal } from './InstallModal.jsx';
 import { DriversTab } from './DriversTab.jsx';
 import { LogTab } from './LogTab.jsx';
+import { ProfilesTab } from './ProfilesTab.jsx';
+import { ComputersTab } from './ComputersTab.jsx';
 import { timeAgo } from '../../lib/fmt.js';
 
 const { PageHeader, Tabs, Button, IconButton, Input, ProgressBar, Alert, EmptyState, Badge } = DS;
@@ -70,6 +72,8 @@ export function PrintersScreen({ toast }) {
         <Tabs value={prefs.tab} onChange={setTab} items={[
           { value: 'devices', label: 'Dispositivos', icon: 'printer', count: counts.all },
           { value: 'drivers', label: 'Drivers', icon: 'package', count: s.repo.models || undefined },
+          { value: 'computers', label: 'Computadores', icon: 'monitor', count: s.remote && !s.remote.done ? s.remote.items.length : undefined },
+          { value: 'profiles', label: 'Perfis', icon: 'sliders-horizontal' },
           { value: 'log', label: 'Histórico', icon: 'history' },
         ]} />
       </div>
@@ -97,6 +101,8 @@ export function PrintersScreen({ toast }) {
             </div>
       )}
       {prefs.tab === 'drivers' && <DriversTab state={s} toast={toast} />}
+      {prefs.tab === 'computers' && <ComputersTab state={s} toast={toast} />}
+      {prefs.tab === 'profiles' && <ProfilesTab toast={toast} />}
       {prefs.tab === 'log' && <LogTab />}
 
       {installFor && <InstallModal device={installFor} toast={toast} onClose={() => setInstallFor(null)} goDrivers={() => { setInstallFor(null); setTab('drivers'); }} />}

@@ -1,6 +1,7 @@
 import { DS } from '../../lib/ds.js';
+import { NONE } from './profileOptions.js';
 
-const { Modal, Button, Badge, Field, Input, Toggle, Alert, ProgressBar, Icon, Tag } = DS;
+const { Modal, Button, Badge, Field, Input, Select, Toggle, Alert, ProgressBar, Icon, Tag } = DS;
 
 const SOURCE_ICON = { repo: 'folder-down', installed: 'circle-check', class: 'globe' };
 
@@ -38,6 +39,8 @@ export function InstallModal({ device, onClose, toast, goDrivers }) {
   const [queue, setQueue] = React.useState('');
   const [location, setLocation] = React.useState('');
   const [setDefault, setSetDefault] = React.useState(false);
+  const [others, setOthers] = React.useState([]); // perfis de outros modelos, só se a pessoa quiser usar
+  const [profileId, setProfileId] = React.useState(NONE);
   const [phase, setPhase] = React.useState('choose'); // choose → installing → done → testing → tested
   const [result, setResult] = React.useState(null);
   const [test, setTest] = React.useState(null);
@@ -48,14 +51,27 @@ export function InstallModal({ device, onClose, toast, goDrivers }) {
       setQueue(o.suggestedName);
       const first = o.candidates.find((c) => c.recommended) || o.candidates[0];
       if (first) setKey(first.key);
+      if (o.suggestedProfileId) setProfileId(o.suggestedProfileId);
+      window.devkit.printers.profiles().then((all) => setOthers(all.filter((x) => !o.profiles.some((m) => m.id === x.id))), () => {});
     }, (e) => setErr(e.message));
   }, [device.id]);
 
   const chosen = opts && opts.candidates.find((c) => c.key === key);
+  const profile = opts && [...opts.profiles, ...others].find((x) => x.id === profileId);
+  const profileDriver = profile && profile.driver && profile.driver.name;
+  const profileDriverMissing = profileDriver && opts && !opts.candidates.some((c) => c.driver.toLowerCase() === profileDriver.toLowerCase());
+
+  // Trocar de perfil leva o driver junto, se ele estiver entre as opções.
+  const pickProfile = (id) => {
+    setProfileId(id);
+    const x = [...opts.profiles, ...others].find((y) => y.id === id);
+    const hit = x && x.driver && x.driver.name && opts.candidates.find((c) => c.driver.toLowerCase() === x.driver.name.toLowerCase());
+    if (hit) setKey(hit.key);
+  };
 
   const install = () => {
     setPhase('installing');
-    window.devkit.printers.install({ deviceId: device.id, key, queue, location, setDefault }).then((r) => {
+    window.devkit.printers.install({ deviceId: device.id, key, queue, location, setDefault, profileId: profileId === NONE ? undefined : profileId }).then((r) => {
       if (r.cancelled) { setPhase('choose'); toast('Cancelado', 'A permissão de administrador não foi dada', 'warn'); return; }
       setResult(r);
       setPhase('done');
@@ -125,6 +141,15 @@ export function InstallModal({ device, onClose, toast, goDrivers }) {
                 <Input value={location} onChange={(e) => setLocation(e.target.value)} maxLength={120} />
               </Field>
             </div>
+            {(opts.profiles.length > 0 || others.length > 0) && (
+              <Field label="Perfil de preferências (opcional)"
+                hint={opts.profiles.length ? `Perfis salvos para ${opts.model}: papel, origem do papel, frente e verso, cor… aplicados depois de criar a fila` : 'Nenhum perfil salvo para este modelo; dá para usar o de outro'}>
+                <Select value={profileId} onChange={pickProfile}
+                  options={[{ value: NONE, label: 'Nenhum' }, ...opts.profiles.map((p) => ({ value: p.id, label: p.name })),
+                    ...others.map((p) => ({ value: p.id, label: `${p.name} — ${p.model}` }))]} />
+              </Field>
+            )}
+            {profileDriverMissing && <Alert variant="warn" title="O driver do perfil não está disponível">"{profileDriver}" não está no repositório nem instalado; escolha outro acima ou adicione-o ao repositório. As preferências do perfil continuam valendo.</Alert>}
             <label className="prn-default"><Toggle checked={setDefault} onChange={setSetDefault} /> Definir como impressora padrão deste usuário</label>
             {opts.links.length > 0 && (
               <div className="prn-ext prn-ext--muted">Outros drivers: {opts.links.map((l) => <a key={l.url} href="#" onClick={(e) => { e.preventDefault(); window.devkit.shell.openUrl(l.url); }}>{l.label} ↗</a>)}</div>
