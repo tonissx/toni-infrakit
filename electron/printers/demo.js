@@ -87,6 +87,43 @@ function createDemo() {
 
   async function run(script) {
     await sleep(250);
+    // Computadores fictícios: REC-PC02 está desligado (sem WinRM) e FIN-PC03 já tem a fila "Financeiro".
+    if (script.includes('adsisearcher')) {
+      await sleep(900);
+      const ago = (d) => new Date(Date.now() - d * 86400000).toISOString();
+      const pc = (name, os, d) => ({ name, dns: name.toLowerCase() + '.empresa.local', os, lastLogon: ago(d) });
+      return { ok: true, error: null, computers: [
+        pc('FIN-PC01', 'Windows 11 Pro', 0), pc('FIN-PC02', 'Windows 11 Pro', 1), pc('FIN-PC03', 'Windows 10 Pro', 0),
+        pc('REC-PC01', 'Windows 11 Pro', 2), pc('REC-PC02', 'Windows 10 Pro', 41), pc('RH-PC01', 'Windows 11 Pro', 0),
+        pc('SUP-PC01', 'Windows 11 Pro', 0), pc('SRV-ARQUIVOS', 'Windows Server 2022 Standard', 0),
+      ] };
+    }
+    if (script.includes('# IK-PREFLIGHT')) {
+      await sleep(1200);
+      const names = [...(/\$names = @\((.*)\)/.exec(script)[1]).matchAll(/'((?:[^']|'')*)'/g)].map((m) => m[1]);
+      return names.map((n) => (/REC-PC02/i.test(n)
+        ? { computer: n, ok: false, error: 'WinRM cannot complete the operation. Verify that the specified computer name is valid' }
+        : { computer: n, ok: true, error: null, x64: true, os: 'Microsoft Windows 11 Pro', spooler: 'Running', queueExists: /FIN-PC03/i.test(n), driverInstalled: false }));
+    }
+    if (script.includes('# IK-REMOTE')) {
+      const computer = /\$computer = '((?:[^']|'')*)'/.exec(script)[1].replace(/''/g, "'");
+      await sleep(1500 + Math.random() * 2500);
+      const steps = [{ label: 'Conectar ao computador (WinRM)', ok: true, detail: computer }];
+      if (/REC-PC02/i.test(computer)) {
+        steps[0] = { ...steps[0], ok: false, detail: 'WinRM cannot complete the operation.' };
+        return { computer, ok: false, queue: null, reboot: false, error: 'WinRM cannot complete the operation.', steps };
+      }
+      // O script de instalação vai dentro de uma string: as aspas dele aparecem dobradas.
+      const driver = (/Add-PrinterDriver -Name ''([^']*)''/.exec(script) || [])[1] || 'Microsoft IPP Class Driver';
+      if (script.includes('Copiar o driver')) steps.push({ label: 'Copiar o driver para o computador', ok: true, detail: 'C:\\ProgramData\\Toni Infrakit\\drivers\\demo' });
+      if (script.includes('Add-PrinterDriver')) steps.push({ label: 'Registrar o driver de impressora', ok: true, detail: driver });
+      steps.push({ label: 'Criar a porta TCP/IP', ok: true, detail: 'Porta criada' }, { label: 'Criar a fila de impressão', ok: true, detail: 'ok' });
+      for (const m of script.matchAll(/SoftStep '((?:[^']|'')*)' \{/g)) steps.push({ label: m[1].replace(/''/g, "'"), ok: true, detail: 'ok' });
+      return { computer, ok: true, queue: 'demo', reboot: false, error: null, steps };
+    }
+    if (script.includes('GetPrintCapabilities')) {
+      return { ok: true, paperSizes: ['ISOA4', 'ISOA5', 'NorthAmericaLetter', 'NorthAmericaLegal'], inputBins: ['AutoSelect', 'Cassette', 'Manual'], duplex: true, color: false, error: null };
+    }
     if (script.includes('Get-PrinterPort')) return JSON.parse(JSON.stringify(inventory));
     if (script.includes('PrintTestPage')) {
       const name = /\$_\.Name -eq '((?:[^']|'')*)'/.exec(script)[1].replace(/''/g, "'");
@@ -104,6 +141,17 @@ function createDemo() {
     return { ok: true };
   }
 
+  /** Um passo por preferência (SoftStep) do script gerado; o demo finge que a Epson não tem bandeja 2. */
+  async function prefSteps(script, steps) {
+    for (const m of script.matchAll(/SoftStep '((?:[^']|'')*)' \{/g)) {
+      await sleep(300);
+      const label = m[1].replace(/''/g, "'");
+      steps.push(/origem/.test(label) && /EPSON/i.test(script)
+        ? { label, ok: false, detail: 'Não aplicado: o driver não expõe essa opção' }
+        : { label, ok: true, detail: 'ok' });
+    }
+  }
+
   async function runElevated(script) {
     await sleep(900); // "UAC"
     const steps = [];
@@ -116,6 +164,11 @@ function createDemo() {
       return { ok: true, queue: null, reboot: false, error: null, steps };
     }
     const queue = /Get-Printer -Name '((?:[^']|'')*)' -ErrorAction SilentlyContinue\) \{ throw/.exec(script)[1].replace(/''/g, "'");
+    if (script.includes("throw 'Fila não encontrada'")) {
+      if (!known().has(queue.toLowerCase())) return { ok: false, queue: null, reboot: false, error: 'Fila não encontrada', steps };
+      await prefSteps(script, steps);
+      return { ok: true, queue: null, reboot: false, error: null, steps };
+    }
     if (known().has(queue.toLowerCase())) return { ok: false, queue: null, reboot: false, error: `Já existe uma fila chamada ${queue}. Escolha outro nome.`, steps };
     let driver;
     let port;
@@ -143,6 +196,7 @@ function createDemo() {
     }
     const location = arg(script, '-Location');
     if (location) await step('Gravar local e comentário', 'ok', 200);
+    await prefSteps(script, steps);
     inventory.printers.push({ Name: queue, DriverName: driver, PortName: port, Status: 'Normal', Location: location || '' });
     return { ok: true, queue, reboot: false, error: null, steps };
   }

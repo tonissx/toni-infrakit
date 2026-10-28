@@ -13,7 +13,7 @@ const INVENTORY = {
   ports: [], drivers: [{ Name: 'Microsoft IPP Class Driver' }], win: [], pnp: [], isAdmin: false, computer: 'PC-01',
 };
 
-async function setup({ elevated = async () => ({ ok: true, steps: [{ label: 'x', ok: true }] }) } = {}) {
+async function setup({ elevated = async () => ({ ok: true, steps: [{ label: 'x', ok: true }] }), runExtra = null } = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ik-test-'));
   const calls = { run: [], elevated: [], staged: [] };
   let inventory = structuredClone(INVENTORY);
@@ -23,6 +23,7 @@ async function setup({ elevated = async () => ({ ok: true, steps: [{ label: 'x',
     platform: 'win32',
     run: async (script) => {
       calls.run.push(script);
+      if (runExtra) { const r = await runExtra(script); if (r !== undefined) return r; }
       if (script.includes('Get-PrinterPort')) return inventory;
       if (script.includes('PrintTestPage')) return { ok: true, sent: true, cleared: true, jobs: [], seconds: 2.4 };
       if (script.includes('SetDefaultPrinter')) return { ok: true };
@@ -129,4 +130,95 @@ test('estado sobrevive a reiniciar o serviço', async () => {
 test('faixa inválida não é gravada', async () => {
   const { svc } = await setup();
   await assert.rejects(svc.setSettings({ ranges: '10.0.0.0/8' }), /grande demais/);
+});
+
+test('perfis: salvar, nome repetido, exportar/importar e sobreviver a reiniciar', async () => {
+  const { svc } = await setup();
+  await svc.saveProfile({ name: 'A4 duplex', model: 'M404', prefs: { paperSize: 'ISOA4', duplex: 'TwoSidedLongEdge', lixo: 1, orientation: 'x; Remove-Item' } });
+  const [p] = await svc.listProfiles();
+  assert.deepEqual(p.prefs, { paperSize: 'ISOA4', duplex: 'TwoSidedLongEdge' }); // valor desconhecido é descartado
+  await assert.rejects(() => svc.saveProfile({ name: 'a4 DUPLEX', model: 'M404' }), /Já existe um perfil/);
+  const text = await svc.exportProfiles();
+  const list = await svc.importProfiles(text);
+  assert.equal(list.length, 2);
+  assert.equal(list[1].name, 'A4 duplex (2)');
+  assert.notEqual(list[1].id, list[0].id);
+  await assert.rejects(() => svc.importProfiles('nao e json'), /JSON/);
+});
+
+test('instalar com perfil leva as preferências ao script; aplicar perfil em fila existente', async () => {
+  const { svc, calls, setInventory } = await setup();
+  await svc.setSettings({ repoDirs: ['\\\\srv\\d'] });
+  await svc.reindex();
+  await svc.scan();
+  await svc.saveProfile({ name: 'P', model: 'HP LaserJet Pro M404dn', prefs: { paperSize: 'ISOA4', inputBin: 'Cassette', color: false } });
+  const [prof] = await svc.listProfiles();
+  const o = await svc.driverOptions('net:10.0.0.25');
+  assert.equal(o.suggestedProfileId, prof.id); // casou pelo modelo
+  await svc.install({ deviceId: 'net:10.0.0.25', key: o.candidates[0].key, queue: 'Financeiro', profileId: prof.id });
+  assert.match(calls.elevated[0], /PageMediaSizeName\]::ISOA4/);
+  assert.match(calls.elevated[0], /InputBin\]::Cassette/);
+  assert.match(calls.elevated[0], /-Color \$false/);
+
+  setInventory({ ...INVENTORY, printers: [...INVENTORY.printers, { Name: 'Fila 2', DriverName: 'D', PortName: 'IP_1' }] });
+  await svc.refreshLocal();
+  const r = await svc.applyProfile('Fila 2', prof.id);
+  assert.ok(r.ok);
+  assert.match(calls.elevated[1], /Set-PrintConfiguration -PrinterName 'Fila 2' -Color \$false/);
+  assert.equal((await svc.getLog())[0].action, 'profile');
+  await assert.rejects(() => svc.applyProfile('Fantasma', prof.id), /não está mais na lista/);
+});
+
+test('instalação em vários computadores: paralelo, um falha e os outros seguem, histórico por máquina', async () => {
+  const seen = [];
+  const { svc, calls } = await setup({
+    runExtra: async (script) => {
+      if (!script.includes('# IK-REMOTE')) return undefined;
+      const computer = /\$computer = '([^']*)'/.exec(script)[1];
+      seen.push(computer);
+      if (computer === 'PC-DESLIGADO') return { computer, ok: false, error: 'The client cannot connect to the destination (WinRM)', steps: [{ label: 'Conectar ao computador (WinRM)', ok: false, detail: 'x' }] };
+      return { computer, ok: true, queue: 'Financeiro', reboot: false, error: null, steps: [{ label: 'Criar a fila de impressão', ok: true, detail: 'ok' }] };
+    },
+  });
+  await svc.setSettings({ repoDirs: ['\\\\srv\\d'] });
+  await svc.reindex();
+  await svc.scan();
+  const o = await svc.driverOptions('net:10.0.0.25');
+  const r = await svc.remoteInstall({ computers: ['PC-01', 'PC-DESLIGADO', 'PC-02', 'pc-01'], deviceId: 'net:10.0.0.25', key: o.candidates[0].key, queue: 'Financeiro' });
+  assert.deepEqual(seen.sort(), ['PC-01', 'PC-02', 'PC-DESLIGADO']); // pc-01 repetido não conta
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.items.map((i) => i.state).sort(), ['fail', 'ok', 'ok']);
+  assert.match(r.items.find((i) => i.computer === 'PC-DESLIGADO').detail, /WinRM/);
+  assert.deepEqual(calls.staged, ['\\\\srv\\d\\hp.inf']); // o driver é copiado uma vez só
+  assert.equal(calls.elevated.length, 0); // remoto não pede UAC local
+  const snap = await svc.get();
+  assert.ok(snap.remote.done);
+  const log = (await svc.getLog()).filter((e) => e.action === 'remote-install');
+  assert.equal(log.length, 3);
+  svc.clearRemote();
+  assert.equal((await svc.get()).remote, null);
+});
+
+test('instalação remota recusa nome de computador inválido, lista vazia e excesso', async () => {
+  const { svc } = await setup();
+  await svc.scan();
+  const base = { deviceId: 'net:10.0.0.25', key: 'x', queue: 'Q' };
+  await assert.rejects(() => svc.remoteInstall({ ...base, computers: ["PC'; Remove-Item C:\\ -Recurse; '"] }), /inválido/);
+  await assert.rejects(() => svc.remoteInstall({ ...base, computers: [] }), /ao menos um/);
+  await assert.rejects(() => svc.remoteInstall({ ...base, computers: Array.from({ length: 51 }, (_, i) => 'PC' + i) }), /No máximo/);
+});
+
+test('verificar computadores traduz o erro do WinRM', async () => {
+  const { svc, calls } = await setup({
+    runExtra: async (script) => (script.includes('# IK-PREFLIGHT') ? [
+      { computer: 'A', ok: true, x64: true, queueExists: false, driverInstalled: true },
+      { computer: 'B', ok: false, error: 'WinRM cannot complete the operation.' },
+      { computer: 'C', ok: false, error: 'Access is denied.' },
+    ] : undefined),
+  });
+  const r = await svc.preflight({ computers: ['A', 'B', 'C'], queue: 'Q' });
+  assert.equal(r[0].ok, true);
+  assert.match(r[1].error, /Sem resposta do WinRM/);
+  assert.match(r[2].error, /não é administrador/);
+  assert.match(calls.run[calls.run.length - 1], /@\('A', 'B', 'C'\)/);
 });

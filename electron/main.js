@@ -135,6 +135,32 @@ ipcMain.handle('printers:set-settings', (_e, patch) => printers.setSettings(patc
 ipcMain.handle('printers:reindex', () => printers.reindex());
 ipcMain.handle('printers:log', () => printers.getLog());
 ipcMain.handle('printers:clear-log', () => printers.clearLog());
+ipcMain.handle('printers:computers', () => printers.listComputers());
+ipcMain.handle('printers:preflight', (_e, req) => printers.preflight(req || {}));
+ipcMain.handle('printers:remote-install', (_e, req) => printers.remoteInstall(req || {}));
+ipcMain.handle('printers:remote-cancel', () => printers.cancelRemote());
+ipcMain.handle('printers:remote-clear', () => printers.clearRemote());
+ipcMain.handle('printers:driver-names', () => printers.driverNames());
+ipcMain.handle('printers:profiles', () => printers.listProfiles());
+ipcMain.handle('printers:profile-save', (_e, p) => printers.saveProfile(p || {}));
+ipcMain.handle('printers:profile-delete', (_e, id) => printers.deleteProfile(String(id)));
+ipcMain.handle('printers:profile-apply', (_e, queue, id) => printers.applyProfile(String(queue), String(id)));
+ipcMain.handle('printers:capabilities', (_e, queue) => printers.capabilities(String(queue)));
+ipcMain.handle('printers:profiles-export', async (e) => {
+  const { dialog } = require('electron');
+  const r = await dialog.showSaveDialog(fromEvent(e), { title: 'Exportar perfis', defaultPath: 'perfis-impressora.json', filters: [{ name: 'JSON', extensions: ['json'] }] });
+  if (r.canceled || !r.filePath) return { ok: false, cancelled: true };
+  await require('node:fs/promises').writeFile(r.filePath, await printers.exportProfiles(), 'utf8');
+  return { ok: true, file: r.filePath };
+});
+ipcMain.handle('printers:profiles-import', async (e) => {
+  const { dialog } = require('electron');
+  const r = await dialog.showOpenDialog(fromEvent(e), { title: 'Importar perfis', properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] });
+  if (r.canceled || !r.filePaths[0]) return { ok: false, cancelled: true };
+  const before = (await printers.listProfiles()).length;
+  const list = await printers.importProfiles(await require('node:fs/promises').readFile(r.filePaths[0], 'utf8'));
+  return { ok: true, added: list.length - before, profiles: list };
+});
 ipcMain.handle('printers:pick-folder', async (e) => {
   const { dialog } = require('electron');
   const r = await dialog.showOpenDialog(fromEvent(e), { title: 'Pasta de drivers', properties: ['openDirectory'] });

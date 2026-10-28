@@ -55,6 +55,178 @@ function ippHttpUrl(uri, ip) {
 }
 
 /**
+ * Passos "moleculares" das preferências (cada um falha sozinho, sem interromper o script: nem todo driver suporta tudo).
+ * prefs já normalizado (profiles.normalizePrefs); os valores ainda passam por q().
+ */
+function prefsLines(queue, prefs, indent = '  ') {
+  const qn = q(queue);
+  const out = [`${indent}function SoftStep([string]$label, [scriptblock]$body) {
+${indent}  try { $o = & $body; [void]$steps.Add([ordered]@{ label = $label; ok = $true; detail = (($o | Out-String).Trim()) }) }
+${indent}  catch { [void]$steps.Add([ordered]@{ label = $label; ok = $false; detail = 'Não aplicado: ' + $_.Exception.Message }) }
+${indent}}`];
+  const items = [
+    ['duplex', 'frente e verso', (v) => `-DuplexingMode ${q(v)}`],
+    ['color', 'cor', (v) => `-Color $${!!v}`],
+    ['collate', 'agrupar cópias', (v) => `-Collate $${!!v}`],
+  ];
+  // Um Set-PrintConfiguration por item, para que o driver que não suporta um deles não derrube os outros.
+  for (const [k, label, arg] of items) {
+    if (prefs[k] === undefined) continue;
+    out.push(`${indent}SoftStep ${q('Preferência: ' + label)} { Set-PrintConfiguration -PrinterName ${qn} ${arg(prefs[k])}; 'ok' }`);
+  }
+  // Papel, orientação e bandeja vão pelo PrintTicket padrão da fila (os nomes são os da própria fila, ex. ISOA4).
+  // Nomes de enum entram sem aspas no script: só passam se forem identificadores simples.
+  const ident = (v) => (/^[A-Za-z0-9_]{1,40}$/.test(String(v || '')) ? v : null);
+  const tickets = [
+    [ident(prefs.paperSize), 'tamanho do papel', (v) => `$t.PageMediaSize = New-Object System.Printing.PageMediaSize([System.Printing.PageMediaSizeName]::${v})`],
+    [ident(prefs.orientation), 'orientação', (v) => `$t.PageOrientation = [System.Printing.PageOrientation]::${v}`],
+    [ident(prefs.inputBin), 'origem do papel', (v) => `$t.InputBin = [System.Printing.InputBin]::${v}`],
+  ];
+  if (tickets.some(([v]) => v)) {
+    out.push(`${indent}function TicketSet([scriptblock]$edit) {
+${indent}  Add-Type -AssemblyName System.Printing
+${indent}  $pq = (New-Object System.Printing.LocalPrintServer).GetPrintQueue(${qn}, [string[]]@(), [System.Printing.PrintSystemDesiredAccess]::AdministratePrinter)
+${indent}  $t = $pq.DefaultPrintTicket
+${indent}  & $edit
+${indent}  $pq.DefaultPrintTicket = $t
+${indent}  $pq.Commit()
+${indent}  'ok'
+${indent}}`);
+    for (const [v, label, set] of tickets) if (v) out.push(`${indent}SoftStep ${q('Preferência: ' + label)} { TicketSet { ${set(v)} } }`);
+  }
+  return out;
+}
+
+/** Aplica as preferências de um perfil a uma fila existente. Precisa de admin. Nunca falha como um todo: veja os passos. */
+function applyPrefsScript(queue, prefs) {
+  return `${STEPS_HEAD}
+try {
+  if (-not (Get-Printer -Name ${q(queue)} -ErrorAction SilentlyContinue)) { throw 'Fila não encontrada' }
+${prefsLines(queue, prefs).join('\n')}
+  $result.ok = $true
+} catch { $result.error = $_.Exception.Message }
+${STEPS_TAIL}`;
+}
+
+/** Tamanhos de papel e bandejas que a fila declara suportar. Não precisa de admin. */
+function capabilitiesScript(queue) {
+  return `${PRELUDE}
+$r = [ordered]@{ ok = $false; paperSizes = @(); inputBins = @(); duplex = $false; color = $false; error = $null }
+try {
+  Add-Type -AssemblyName System.Printing
+  $srv = New-Object System.Printing.LocalPrintServer
+  $pq = $srv.GetPrintQueue(${q(queue)})
+  $c = $pq.GetPrintCapabilities()
+  $r.paperSizes = @($c.PageMediaSizeCapability | ForEach-Object { "$($_.PageMediaSizeName)" } | Where-Object { $_ -and $_ -ne 'Unknown' } | Select-Object -Unique)
+  $r.inputBins = @($c.InputBinCapability | ForEach-Object { "$_" } | Select-Object -Unique)
+  $r.duplex = (@($c.DuplexingCapability) -contains [System.Printing.Duplexing]::TwoSidedLongEdge)
+  $r.color = (@($c.OutputColorCapability) -contains [System.Printing.OutputColor]::Color)
+  $r.ok = $true
+} catch { $r.error = $_.Exception.Message }
+$r | ConvertTo-Json -Depth 3 -Compress`;
+}
+
+/**
+ * Computadores do domínio (Active Directory) via ADSI: não precisa do RSAT. Só máquinas Windows habilitadas.
+ * Retorna { ok, computers: [{ name, dns, os, lastLogon (ISO) }], error }. Não precisa de admin.
+ */
+function adComputersScript() {
+  return `${PRELUDE}
+$r = [ordered]@{ ok = $false; computers = @(); error = $null }
+try {
+  $s = [adsisearcher]'(&(objectCategory=computer)(operatingSystem=*Windows*)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))'
+  $s.PageSize = 1000
+  [void]$s.PropertiesToLoad.AddRange(@('name', 'dnshostname', 'operatingsystem', 'lastlogontimestamp'))
+  $list = New-Object System.Collections.ArrayList
+  foreach ($x in $s.FindAll()) {
+    $p = $x.Properties
+    $ll = $null
+    if ($p['lastlogontimestamp'].Count) { $ll = [DateTime]::FromFileTime([int64]$p['lastlogontimestamp'][0]).ToString('o') }
+    [void]$list.Add([ordered]@{ name = "$($p['name'][0])"; dns = "$($p['dnshostname'][0])"; os = "$($p['operatingsystem'][0])"; lastLogon = $ll })
+  }
+  $r.computers = @($list | Sort-Object { $_.name })
+  $r.ok = $true
+} catch { $r.error = $_.Exception.Message }
+$r | ConvertTo-Json -Depth 4 -Compress`;
+}
+
+/**
+ * Confere se dá para instalar nos computadores: WinRM responde, 64 bits, spooler, fila/driver já existentes.
+ * Tudo em paralelo (Invoke-Command com vários destinos). Retorna uma lista [{ computer, ok, error, x64, os, queueExists, driverInstalled }].
+ */
+function preflightScript(computers, { queue = '', driver = '' } = {}) {
+  return `${PRELUDE}
+# IK-PREFLIGHT
+$names = @(${computers.map(q).join(', ')})
+$errs = @()
+$res = @(Invoke-Command -ComputerName $names -ErrorAction SilentlyContinue -ErrorVariable errs -SessionOption (New-PSSessionOption -OpenTimeout 15000) -ArgumentList ${q(queue)}, ${q(driver)} -ScriptBlock {
+  param($queue, $driver)
+  [pscustomobject]@{
+    x64 = [Environment]::Is64BitOperatingSystem
+    os = (Get-CimInstance Win32_OperatingSystem).Caption
+    spooler = "$((Get-Service Spooler).Status)"
+    queueExists = [bool]($queue -and (Get-Printer -Name $queue -ErrorAction SilentlyContinue))
+    driverInstalled = [bool]($driver -and (Get-PrinterDriver -Name $driver -ErrorAction SilentlyContinue))
+  }
+})
+$fail = @{}
+foreach ($e in $errs) { $t = "$($e.TargetObject)"; if ($t -and -not $fail.ContainsKey($t)) { $fail[$t] = ("$($e.Exception.Message)" -split "\\r?\\n")[0] } }
+$out = foreach ($n in $names) {
+  $hit = $res | Where-Object { $_.PSComputerName -eq $n } | Select-Object -First 1
+  if ($hit) { [ordered]@{ computer = $n; ok = $true; error = $null; x64 = $hit.x64; os = $hit.os; spooler = $hit.spooler; queueExists = $hit.queueExists; driverInstalled = $hit.driverInstalled } }
+  else { [ordered]@{ computer = $n; ok = $false; error = $(if ($fail.ContainsKey($n)) { $fail[$n] } else { 'Sem resposta' }) } }
+}
+ConvertTo-Json -InputObject @($out) -Depth 3 -Compress`;
+}
+
+/**
+ * Instala a fila em UM computador remoto (PowerShell Remoting, com o usuário atual: sem UAC nem senha).
+ * plan é o mesmo do installScript, mas só TCP/IP ou IPP, com plan.inf já apontando para remote.dir.
+ * remote: { srcDir, dir } — pasta do driver nesta máquina e onde ela será copiada lá (removida no fim).
+ * Retorna { computer, ok, queue, reboot, error, steps }.
+ */
+function remoteInstallScript(computer, plan, remote = {}) {
+  // [Console]::OutputEncoding falha numa sessão remota sem console; o resto do script de instalação roda igual.
+  const inner = installScript(plan).replace(/\[Console\]::OutputEncoding[^\n]*\n/, '');
+  const copy = remote.srcDir ? `
+  Step 'Copiar o driver para o computador' {
+    Invoke-Command -Session $s -ScriptBlock { param($d) New-Item -ItemType Directory -Force -Path $d | Out-Null } -ArgumentList ${q(remote.dir)}
+    Copy-Item -Path (Join-Path ${q(remote.srcDir)} '*') -Destination ${q(remote.dir)} -ToSession $s -Recurse -Force
+    ${q(remote.dir)}
+  }` : '';
+  return `${PRELUDE}
+# IK-REMOTE
+$computer = ${q(computer)}
+$steps = New-Object System.Collections.ArrayList
+$r = [ordered]@{ computer = $computer; ok = $false; queue = $null; reboot = $false; error = $null }
+function Step([string]$label, [scriptblock]$body) {
+  try { $o = & $body; [void]$steps.Add([ordered]@{ label = $label; ok = $true; detail = (($o | Out-String).Trim()) }) }
+  catch { [void]$steps.Add([ordered]@{ label = $label; ok = $false; detail = $_.Exception.Message }); throw }
+}
+$s = $null
+try {
+  Step 'Conectar ao computador (WinRM)' {
+    $script:s = New-PSSession -ComputerName $computer -SessionOption (New-PSSessionOption -OpenTimeout 15000) -ErrorAction Stop
+    $computer
+  }${copy}
+  $out = Invoke-Command -Session $s -ScriptBlock ([scriptblock]::Create(${q(inner)}))
+  $line = @($out | ForEach-Object { "$_" } | Where-Object { $_ -match '^\\s*\\{' }) | Select-Object -Last 1
+  if (-not $line) { throw 'O computador não devolveu resultado da instalação' }
+  $in = $line | ConvertFrom-Json
+  foreach ($x in @($in.steps)) { [void]$steps.Add([ordered]@{ label = $x.label; ok = [bool]$x.ok; detail = "$($x.detail)" }) }
+  $r.ok = [bool]$in.ok; $r.queue = $in.queue; $r.reboot = [bool]$in.reboot; $r.error = $in.error
+} catch { $r.error = $_.Exception.Message }
+finally {
+  if ($s) {${remote.srcDir ? `
+    try { Invoke-Command -Session $s -ScriptBlock { param($d) Remove-Item -Recurse -Force -Path $d -ErrorAction SilentlyContinue } -ArgumentList ${q(remote.dir)} } catch {}` : ''}
+    Remove-PSSession $s -ErrorAction SilentlyContinue
+  }
+}
+$r.steps = @($steps)
+$r | ConvertTo-Json -Depth 6 -Compress`;
+}
+
+/**
  * Instalação. plan: {
  *   queue, method: 'driver'|'ipp', driver, source: 'repo'|'installed'|'class', inf (local, já copiado),
  *   connection: 'tcp'|'usb', ip, port: 'raw'|'lpr', lprQueue, ippUri, location, comment
@@ -136,6 +308,7 @@ function installScript(plan) {
     const args = [plan.location ? `-Location ${q(plan.location)}` : '', plan.comment ? `-Comment ${q(plan.comment)}` : ''].filter(Boolean).join(' ');
     lines.push(`  Step 'Gravar local e comentário' { Set-Printer -Name ${queue} ${args}; 'ok' }`);
   }
+  if (plan.prefs && Object.keys(plan.prefs).length) lines.push(...prefsLines(plan.queue, plan.prefs));
   lines.push(`  $result.queue = ${queue}`, '  $result.ok = $true', '} catch {', '  $result.error = $_.Exception.Message', '}', STEPS_TAIL);
   return lines.join('\n');
 }
@@ -202,4 +375,4 @@ Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /o /n "' + $
 '{"ok":true}'`;
 }
 
-module.exports = { q, inventoryScript, installScript, testPageScript, removeScript, setDefaultScript, openQueueScript, ippHttpUrl };
+module.exports = { q, adComputersScript, preflightScript, remoteInstallScript, inventoryScript, applyPrefsScript, capabilitiesScript, installScript, testPageScript, removeScript, setDefaultScript, openQueueScript, ippHttpUrl };

@@ -30,7 +30,21 @@ contextBridge.exposeInMainWorld('devkit', {
     scan: (opts) => ipcRenderer.invoke('printers:scan', opts),
     cancelScan: () => ipcRenderer.invoke('printers:cancel-scan'),
     driverOptions: (id) => ipcRenderer.invoke('printers:driver-options', id),
-    /** req: { deviceId, key, queue, location, setDefault } */
+    computers: () => ipcRenderer.invoke('printers:computers'),
+    preflight: (req) => ipcRenderer.invoke('printers:preflight', req),
+    /** req: { computers: string[], deviceId, key, queue, location, profileId? } — o andamento vem em onChanged (remote). */
+    remoteInstall: (req) => ipcRenderer.invoke('printers:remote-install', req),
+    remoteCancel: () => ipcRenderer.invoke('printers:remote-cancel'),
+    remoteClear: () => ipcRenderer.invoke('printers:remote-clear'),
+    driverNames: () => ipcRenderer.invoke('printers:driver-names'),
+    profiles: () => ipcRenderer.invoke('printers:profiles'),
+    saveProfile: (p) => ipcRenderer.invoke('printers:profile-save', p),
+    deleteProfile: (id) => ipcRenderer.invoke('printers:profile-delete', id),
+    applyProfile: (queue, id) => ipcRenderer.invoke('printers:profile-apply', queue, id),
+    capabilities: (queue) => ipcRenderer.invoke('printers:capabilities', queue),
+    exportProfiles: () => ipcRenderer.invoke('printers:profiles-export'),
+    importProfiles: () => ipcRenderer.invoke('printers:profiles-import'),
+    /** req: { deviceId, key, queue, location, setDefault, profileId? } */
     install: (req) => ipcRenderer.invoke('printers:install', req),
     test: (queue) => ipcRenderer.invoke('printers:test', queue),
     remove: (queue) => ipcRenderer.invoke('printers:remove', queue),
