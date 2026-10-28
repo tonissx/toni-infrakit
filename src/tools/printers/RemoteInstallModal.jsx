@@ -111,6 +111,7 @@ export function RemoteInstallModal({ computers, devices, onClose, toast }) {
           )}
           <Alert variant="info" title="Como funciona">
             Roda com o seu usuário, sem pedir senha, e precisa que você seja administrador de cada computador e que o WinRM esteja ativo.
+            Se o WinRM estiver desligado em algum computador, ele é ativado automaticamente (via WMI) antes de instalar e fica ligado.
             O driver do repositório é copiado para o computador e apagado depois. A impressora padrão não muda (ela é de cada usuário).
           </Alert>
         </>}

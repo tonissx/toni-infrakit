@@ -87,5 +87,9 @@ test('instalação remota: copia o driver, roda o script dentro da sessão e lim
   assert.ok(s.includes("-match '^\\s*\\{'")); // a regex que acha o JSON de volta sobrevive ao template
   const noCopy = remoteInstallScript('PC-01', { ...plan, source: 'installed', inf: null }, {});
   assert.doesNotMatch(noCopy, /Copy-Item/);
+  // WinRM: só liga quando não responde, pelo WMI, e antes de abrir a sessão
+  assert.match(s, /if \(-not \(Test-WSMan -ComputerName \$computer/);
+  assert.match(s, /Invoke-WmiMethod -ComputerName \$computer -Class Win32_Process -Name Create -ArgumentList 'cmd \/c winrm quickconfig -q'/);
+  assert.ok(s.indexOf('Invoke-WmiMethod') < s.indexOf('New-PSSession'));
   assert.match(preflightScript(["A'B", 'C'], { queue: 'Q' }), /@\('A''B', 'C'\)/);
 });

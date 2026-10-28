@@ -15,15 +15,20 @@ const STATE = {
 };
 
 /** Andamento (e resultado) da instalação em vários computadores. */
-function RemoteProgress({ r }) {
+function RemoteProgress({ r, toast }) {
   const [open, setOpen] = React.useState(null);
   const p = window.devkit.printers;
   const done = r.items.filter((i) => i.state === 'ok' || i.state === 'fail' || i.state === 'skipped').length;
   const okCount = r.items.filter((i) => i.state === 'ok').length;
+  const testing = r.items.some((i) => i.test && i.test.state === 'running');
+  const test = (computers) => p.remoteTest(computers ? { computers } : {}).catch((e) => toast('Não deu para testar', e.message, 'error'));
   return (
     <Card padding={16} title={`Instalando "${r.queue}"`} icon="monitor-up"
       actions={r.done
-        ? <Button size="sm" variant="ghost" icon="x" onClick={() => p.remoteClear()}>Fechar</Button>
+        ? <>
+            {okCount > 0 && <Button size="sm" variant="secondary" icon="printer" disabled={testing} onClick={() => test()}>Imprimir página de teste em todos</Button>}
+            <Button size="sm" variant="ghost" icon="x" onClick={() => p.remoteClear()}>Fechar</Button>
+          </>
         : <Button size="sm" variant="secondary" icon="square" disabled={r.cancelled} onClick={() => p.remoteCancel()}>{r.cancelled ? 'Cancelando…' : 'Parar'}</Button>}>
       <ProgressBar value={(done / r.items.length) * 100} showValue
         label={r.done ? `${okCount} de ${r.items.length} instalada(s)` : `${done} de ${r.items.length} concluída(s)`} />
@@ -37,6 +42,12 @@ function RemoteProgress({ r }) {
                 <span className="prn-logrow__detail">{i.detail || ' '}</span>
                 <Badge size="sm" variant={st.variant} dot={st.dot}>{st.label}</Badge>
               </button>
+              {i.ok && r.done && (
+                <div className="prn-addrow" style={{ margin: '0 0 6px 8px' }}>
+                  <Button size="sm" variant="ghost" icon="printer" loading={!!i.test && i.test.state === 'running'} onClick={() => test([i.computer])}>Página de teste</Button>
+                  {i.test && i.test.state !== 'running' && <Badge size="sm" variant={i.test.state === 'ok' ? 'ok' : 'error'}>{i.test.detail}</Badge>}
+                </div>
+              )}
               {open === i.computer && i.steps.length > 0 && (
                 <div className="prn-logrow__body">
                   {i.steps.map((s, k) => (
@@ -121,7 +132,7 @@ export function ComputersTab({ state: s, toast }) {
 
   return (
     <div className="prn-drivers tk-scroll">
-      {s.remote && <RemoteProgress r={s.remote} />}
+      {s.remote && <RemoteProgress r={s.remote} toast={toast} />}
 
       <Card padding={16} title="Computadores" icon="monitor"
         actions={<Button size="sm" variant="secondary" icon="network" loading={loading} onClick={fetchAd}>{store.at ? 'Atualizar do Active Directory' : 'Buscar no Active Directory'}</Button>}>

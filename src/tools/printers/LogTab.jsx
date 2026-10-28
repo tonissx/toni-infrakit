@@ -11,6 +11,7 @@ const ACTION = {
   default: { icon: 'star', label: 'Padrão' },
   profile: { icon: 'sliders-horizontal', label: 'Perfil' },
   'remote-install': { icon: 'monitor-up', label: 'Instalação remota' },
+  'remote-test': { icon: 'printer', label: 'Teste remoto' },
 };
 
 /** Histórico do que foi feito neste computador (útil para chamado/ticket). */

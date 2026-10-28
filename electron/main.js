@@ -138,6 +138,7 @@ ipcMain.handle('printers:clear-log', () => printers.clearLog());
 ipcMain.handle('printers:computers', () => printers.listComputers());
 ipcMain.handle('printers:preflight', (_e, req) => printers.preflight(req || {}));
 ipcMain.handle('printers:remote-install', (_e, req) => printers.remoteInstall(req || {}));
+ipcMain.handle('printers:remote-test', (_e, req) => printers.remoteTest(req));
 ipcMain.handle('printers:remote-cancel', () => printers.cancelRemote());
 ipcMain.handle('printers:remote-clear', () => printers.clearRemote());
 ipcMain.handle('printers:driver-names', () => printers.driverNames());

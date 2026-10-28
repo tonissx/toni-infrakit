@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('devkit', {
     preflight: (req) => ipcRenderer.invoke('printers:preflight', req),
     /** req: { computers: string[], deviceId, key, queue, location, profileId? } — o andamento vem em onChanged (remote). */
     remoteInstall: (req) => ipcRenderer.invoke('printers:remote-install', req),
+    remoteTest: (req) => ipcRenderer.invoke('printers:remote-test', req),
     remoteCancel: () => ipcRenderer.invoke('printers:remote-cancel'),
     remoteClear: () => ipcRenderer.invoke('printers:remote-clear'),
     driverNames: () => ipcRenderer.invoke('printers:driver-names'),

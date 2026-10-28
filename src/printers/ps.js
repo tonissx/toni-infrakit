@@ -205,6 +205,17 @@ function Step([string]$label, [scriptblock]$body) {
 }
 $s = $null
 try {
+  # WinRM desligado: liga pelo WMI (DCOM), que não depende dele, e espera passar a responder. Se já responde, esta etapa nem aparece.
+  if (-not (Test-WSMan -ComputerName $computer -ErrorAction SilentlyContinue)) {
+    Step 'Ativar o WinRM (estava desligado)' {
+      $w = Invoke-WmiMethod -ComputerName $computer -Class Win32_Process -Name Create -ArgumentList 'cmd /c winrm quickconfig -q' -ErrorAction Stop
+      if ($w.ReturnValue -ne 0) { throw "O Windows recusou iniciar o comando (código $($w.ReturnValue))" }
+      $up = $false
+      for ($i = 0; $i -lt 10 -and -not $up; $i++) { Start-Sleep -Seconds 2; $up = [bool](Test-WSMan -ComputerName $computer -ErrorAction SilentlyContinue) }
+      if (-not $up) { throw 'O comando rodou, mas o WinRM não passou a responder (rede com perfil público ou política do domínio?)' }
+      'WinRM ativado'
+    }
+  }
   Step 'Conectar ao computador (WinRM)' {
     $script:s = New-PSSession -ComputerName $computer -SessionOption (New-PSSessionOption -OpenTimeout 15000) -ErrorAction Stop
     $computer
@@ -342,6 +353,22 @@ try {
 $r | ConvertTo-Json -Depth 4 -Compress`;
 }
 
+/**
+ * Página de teste numa fila de OUTRO computador (PowerShell Remoting, usuário atual): o mesmo testPageScript, rodando lá dentro.
+ * Retorna o mesmo formato do testPageScript, ou { ok:false, error } se não conseguiu conectar.
+ */
+function remoteTestScript(computer, queue, waitSeconds = 20) {
+  const inner = testPageScript(queue, waitSeconds).replace(/\[Console\]::OutputEncoding[^\n]*\n/, '');
+  return `${PRELUDE}
+# IK-RTEST
+try {
+  $out = Invoke-Command -ComputerName ${q(computer)} -SessionOption (New-PSSessionOption -OpenTimeout 15000) -ErrorAction Stop -ScriptBlock ([scriptblock]::Create(${q(inner)}))
+  $line = @($out | ForEach-Object { "$_" } | Where-Object { $_ -match '^\\s*\\{' }) | Select-Object -Last 1
+  if (-not $line) { throw 'O computador não devolveu resultado do teste' }
+  $line
+} catch { [ordered]@{ ok = $false; sent = $false; cleared = $false; jobs = @(); error = $_.Exception.Message } | ConvertTo-Json -Compress }`;
+}
+
 /** Remove a fila (e a porta TCP/IP, se nenhuma outra fila usa). Precisa de admin. */
 function removeScript(queue) {
   return `${STEPS_HEAD}
@@ -375,4 +402,4 @@ Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /o /n "' + $
 '{"ok":true}'`;
 }
 
-module.exports = { q, adComputersScript, preflightScript, remoteInstallScript, inventoryScript, applyPrefsScript, capabilitiesScript, installScript, testPageScript, removeScript, setDefaultScript, openQueueScript, ippHttpUrl };
+module.exports = { q, adComputersScript, preflightScript, remoteInstallScript, remoteTestScript, inventoryScript, applyPrefsScript, capabilitiesScript, installScript, testPageScript, removeScript, setDefaultScript, openQueueScript, ippHttpUrl };

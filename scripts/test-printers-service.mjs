@@ -173,6 +173,10 @@ test('instalação em vários computadores: paralelo, um falha e os outros segue
   const seen = [];
   const { svc, calls } = await setup({
     runExtra: async (script) => {
+      if (script.includes('# IK-RTEST')) {
+        const c = /-ComputerName '([^']*)'/.exec(script)[1];
+        return c === 'PC-02' ? { ok: false, sent: true, cleared: false, jobs: [{ status: 'PaperOut' }], seconds: 20 } : { ok: true, sent: true, cleared: true, jobs: [], seconds: 2 };
+      }
       if (!script.includes('# IK-REMOTE')) return undefined;
       const computer = /\$computer = '([^']*)'/.exec(script)[1];
       seen.push(computer);
@@ -195,6 +199,15 @@ test('instalação em vários computadores: paralelo, um falha e os outros segue
   assert.ok(snap.remote.done);
   const log = (await svc.getLog()).filter((e) => e.action === 'remote-install');
   assert.equal(log.length, 3);
+  // página de teste: só nas que instalaram; cada resultado vai para a linha da máquina e para o histórico
+  const t = await svc.remoteTest();
+  assert.deepEqual(t.items.map((i) => i.computer).sort(), ['PC-01', 'PC-02']);
+  assert.equal(t.ok, false);
+  const items = (await svc.get()).remote.items;
+  assert.equal(items.find((i) => i.computer === 'PC-01').test.state, 'ok');
+  assert.match(items.find((i) => i.computer === 'PC-02').test.detail, /continua na fila/);
+  assert.equal(items.find((i) => i.computer === 'PC-DESLIGADO').test, undefined);
+  assert.equal((await svc.getLog()).filter((e) => e.action === 'remote-test').length, 2);
   svc.clearRemote();
   assert.equal((await svc.get()).remote, null);
 });
